@@ -416,7 +416,7 @@ def get_stores() -> tuple[PanoramaSheetStore, PlaceCodeSheetStore, MemberSheetSt
     return build_stores(st.secrets)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_resource(ttl=60, show_spinner=False)
 def load_records(_store: PanoramaSheetStore) -> list[PanoramaLocation]:
     return _store.list_records()
 
