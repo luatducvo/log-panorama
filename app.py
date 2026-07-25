@@ -317,6 +317,28 @@ def apply_mobile_styles() -> None:
             color: var(--muted) !important;
         }
 
+        /* ===== Success notification ===== */
+        .pano-success {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--soft);
+            border: 1px solid var(--accent);
+            border-left: 4px solid var(--accent);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.75rem;
+            animation: pano-slide-in 0.3s ease-out;
+        }
+        .pano-success span {
+            color: var(--ink) !important;
+            font-weight: 600;
+        }
+        @keyframes pano-slide-in {
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
         /* ===== Mobile responsive ===== */
         @media (max-width: 640px) {
             .block-container {
@@ -450,6 +472,16 @@ def render_config_error(error: Exception) -> None:
     )
 
 
+def show_success_notification(message: str) -> None:
+    st.markdown(
+        f'<div class="pano-success">'
+        f'<span>✅</span>'
+        f'<span>{message}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_form(
     store: PanoramaSheetStore,
     place_store: PlaceCodeSheetStore,
@@ -458,27 +490,101 @@ def render_form(
     places: list[PlaceCode],
     members: list[Member],
 ) -> None:
-    # Build lookup maps
-    place_map = {p.code: p.name for p in places}
-    sheet_map = {record.place_code: record.place_name for record in records}
+    if "pano_success" in st.session_state:
+        msg = st.session_state.pop("pano_success")
+        show_success_notification(msg)
 
-    # Popover for adding new place code (outside form)
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        quick_options = [
-            f"{p.code} – {p.name}" for p in sorted(places, key=lambda x: x.code)
-        ]
-        selected_quick = st.selectbox(
-            "Chọn nhanh địa điểm",
-            quick_options,
-            index=0,
-        )
-        selected_code = selected_quick.split(" – ")[0] if selected_quick else ""
-    with col2:
-        st.write("")
-        with st.popover("➕ Thêm mới"):
-            new_code = st.text_input("Mã địa điểm", placeholder="VD: P360-CMT-001")
-            new_desc = st.text_input("Mô tả địa điểm", placeholder="VD: Chùa Minh Thành")
+    place_map = {p.code: p.name for p in places}
+
+    # 1. Quick select place
+    quick_options = [
+        f"{p.code} – {p.name}" for p in sorted(places, key=lambda x: x.code)
+    ]
+    selected_quick = st.selectbox("Chọn nhanh địa điểm", quick_options, index=0)
+    selected_code = selected_quick.split(" – ")[0] if selected_quick else ""
+
+    # 2. Text inputs (right below quick select)
+    place_name = st.text_input("Mô tả địa điểm", placeholder="VD: Cổng chính", key="place_name")
+
+    lat_col, lon_col = st.columns(2)
+    with lat_col:
+        latitude = st.text_input("Vĩ độ (Latitude)", placeholder="VD: 13.9833", key="latitude")
+    with lon_col:
+        longitude = st.text_input("Kinh độ (Longitude)", placeholder="VD: 108.0000", key="longitude")
+
+    # 3. Zone
+    zone = st.selectbox(
+        "Khu vực",
+        ["", "EXT", "INT"],
+        key="zone_select",
+        format_func=lambda x: {"": "— Chọn khu vực —", "EXT": "EXT – Ngoài trời", "INT": "INT – Bên trong"}.get(x, x),
+    )
+
+    # 4. Hotspot info
+    place_full_name = place_map.get(selected_code, "")
+    abbreviation = make_abbreviation(place_full_name)
+    if abbreviation and zone:
+        next_num = suggest_next_hotspot_number(records, abbreviation, zone)
+        hotspot_value = f"{abbreviation}-{zone}-{next_num}"
+        st.info(f"Hotspot: **{hotspot_value}**")
+    else:
+        hotspot_value = ""
+
+    # 5. Member (no popover)
+    member_options = [""] + sorted(
+        [f"{m.code} – {m.name}" for m in members],
+        key=lambda x: x.casefold(),
+    )
+    member = st.selectbox(
+        "Thành viên phụ trách",
+        member_options,
+        format_func=lambda x: "— Chọn thành viên —" if not x else x,
+        key="member_select",
+    )
+
+    # 6. Hotspot nối
+    same_abbr_hotspots = sorted(
+        r.hotspot for r in records
+        if r.hotspot.casefold().startswith(abbreviation.casefold())
+        and r.hotspot != hotspot_value
+    )
+    connects_to = st.selectbox(
+        "Hotspot nối",
+        [""] + same_abbr_hotspots,
+        format_func=lambda x: "— Không kết nối —" if not x else x,
+        key="connects_to",
+    )
+
+    # 7. Submit
+    if st.button("💾 Lưu vào Google Sheet", type="primary", use_container_width=True):
+        if not hotspot_value:
+            st.warning("Vui lòng chọn khu vực (EXT/INT)")
+        else:
+            member_code = member.split(" – ")[0] if member else ""
+            try:
+                record = PanoramaLocation.from_form(
+                    selected_code, place_name, hotspot_value, connects_to,
+                    member_code, latitude, longitude,
+                )
+                result = store.upsert(record)
+            except ValidationError as exc:
+                st.warning(str(exc))
+            except Exception as exc:
+                st.error(f"Không lưu được vào Google Sheet: {exc}")
+            else:
+                message = "Đã tạo log mới." if result == "created" else "Đã cập nhật log hiện có."
+                st.session_state["pano_success"] = message
+                st.cache_data.clear()
+                st.rerun()
+
+    # 8. Management popovers (at the bottom)
+    st.divider()
+    st.caption("Quản lý địa điểm & thành viên")
+    pop_col1, pop_col2 = st.columns(2)
+    with pop_col1:
+        with st.popover("➕ Thêm địa điểm", use_container_width=True):
+            new_code = st.text_input("Mã địa điểm", placeholder="VD: P360-CMT-001", key="new_code")
+            new_desc = st.text_input("Mô tả địa điểm", placeholder="VD: Chùa Minh Thành", key="new_desc")
             if st.button("Thêm vào danh sách", type="primary", use_container_width=True):
                 if new_code.strip():
                     place_store.upsert(PlaceCode(code=new_code.strip(), name=new_desc.strip()))
@@ -486,22 +592,8 @@ def render_form(
                     st.rerun()
                 else:
                     st.warning("Vui lòng nhập mã địa điểm")
-
-    # Member management
-    mcol1, mcol2 = st.columns([4, 1])
-    with mcol1:
-        member_options = [""] + sorted(
-            [f"{m.code} – {m.name}" for m in members],
-            key=lambda x: x.casefold(),
-        )
-        member = st.selectbox(
-            "Thành viên phụ trách",
-            member_options,
-            format_func=lambda x: "— Chọn thành viên —" if not x else x,
-        )
-    with mcol2:
-        st.write("")
-        with st.popover("👤 Quản lý"):
+    with pop_col2:
+        with st.popover("👤 Quản lý thành viên", use_container_width=True):
             add_tab, edit_tab, del_tab = st.tabs(["Thêm", "Sửa", "Xoá"])
             with add_tab:
                 new_member_code = st.text_input("Mã thành viên", placeholder="VD: NV001", key="new_member_code")
@@ -538,70 +630,6 @@ def render_form(
                             st.warning("Không tìm thấy thành viên.")
                 else:
                     st.caption("Chưa có thành viên nào.")
-
-    # Auto-generate abbreviation from place name
-    place_full_name = place_map.get(selected_code, "")
-    abbreviation = make_abbreviation(place_full_name)
-
-    zone = st.selectbox(
-        "Khu vực",
-        ["", "EXT", "INT"],
-        key="zone_select",
-        format_func=lambda x: {"": "— Chọn khu vực —", "EXT": "EXT – Ngoài trời", "INT": "INT – Bên trong"}.get(x, x),
-    )
-
-    if abbreviation and zone:
-        next_num = suggest_next_hotspot_number(records, abbreviation, zone)
-        hotspot_value = f"{abbreviation}-{zone}-{next_num}"
-        st.info(f"Hotspot: **{hotspot_value}**")
-    else:
-        hotspot_value = ""
-
-    with st.form("location_form", clear_on_submit=False):
-        place_code = selected_code
-        place_name = st.text_input("Mô tả địa điểm", placeholder="VD: Cổng chính")
-
-        same_abbr_hotspots = sorted(
-            r.hotspot for r in records
-            if r.hotspot.casefold().startswith(abbreviation.casefold())
-            and r.hotspot != hotspot_value
-        )
-        connects_to = st.selectbox(
-            "Hotspot nối",
-            [""] + same_abbr_hotspots,
-            format_func=lambda x: "— Không kết nối —" if not x else x,
-        )
-
-        lat_col, lon_col = st.columns(2)
-        with lat_col:
-            latitude = st.text_input("Vĩ độ (Latitude)", placeholder="VD: 13.9833")
-        with lon_col:
-            longitude = st.text_input("Kinh độ (Longitude)", placeholder="VD: 108.0000")
-
-        submitted = st.form_submit_button("Lưu vào Google Sheet", type="primary", width='stretch')
-
-    if not submitted:
-        return
-
-    if not hotspot_value:
-        st.warning("Vui lòng chọn khu vực (EXT/INT)")
-        return
-
-    member_code = member.split(" – ")[0] if member else ""
-    try:
-        record = PanoramaLocation.from_form(place_code, place_name, hotspot_value, connects_to, member_code, latitude, longitude)
-        result = store.upsert(record)
-    except ValidationError as exc:
-        st.warning(str(exc))
-        return
-    except Exception as exc:
-        st.error(f"Không lưu được vào Google Sheet: {exc}")
-        return
-
-    st.cache_data.clear()
-    message = "Đã tạo log mới." if result == "created" else "Đã cập nhật log hiện có."
-    st.success(message)
-    st.rerun()
 
 
 def render_debug(store: PanoramaSheetStore) -> None:
