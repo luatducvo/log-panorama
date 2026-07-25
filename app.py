@@ -128,7 +128,6 @@ def get_store() -> PanoramaSheetStore:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_records(_store: PanoramaSheetStore) -> list[PanoramaLocation]:
-    """Tải dữ liệu từ Google Sheets, cache tối đa 60 giây."""
     return _store.list_records()
 
 
@@ -218,7 +217,7 @@ def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> N
         st.error(f"Không lưu được vào Google Sheet: {exc}")
         return
 
-    load_records.clear()
+    st.cache_data.clear()
     message = "Đã tạo log mới." if result == "created" else "Đã cập nhật log hiện có."
     st.success(message)
     st.rerun()
@@ -250,8 +249,8 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
     with title_col:
         st.subheader("Danh sách log")
     with refresh_col:
-        if st.button("🔄 Làm mới", use_container_width=True, help="Tải lại dữ liệu mới nhất từ Google Sheets"):
-            load_records.clear()
+        if st.button("Lam moi", use_container_width=True, key="refresh_btn"):
+            st.cache_data.clear()
             st.rerun()
 
     search = st.text_input("Tìm kiếm", placeholder="Nhập mã, tên địa điểm, hotspot...")
@@ -320,7 +319,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
                 except ValidationError as exc:
                     st.warning(str(exc))
                 else:
-                    load_records.clear()
+                    st.cache_data.clear()
                     st.success("Đã lưu chỉnh sửa.")
                     st.rerun()
 
@@ -338,7 +337,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
         if st.button("Xóa log", type="secondary", width='stretch', disabled=not confirm):
             record = options[selected]
             if store.delete(record.place_code, record.hotspot):
-                load_records.clear()
+                st.cache_data.clear()
                 st.success("Đã xóa log.")
                 st.rerun()
             else:
