@@ -224,6 +224,27 @@ def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> N
     st.rerun()
 
 
+def render_debug(store: PanoramaSheetStore) -> None:
+    """Panel debug — chỉ hiện khi bật trong query params hoặc secrets."""
+    show_debug = st.query_params.get("debug") == "1"
+    if not show_debug:
+        return
+
+    with st.expander("🛠 Debug info", expanded=True):
+        try:
+            raw_rows = store.worksheet.get_all_records()
+            st.write(f"**Số dòng raw từ sheet:** {len(raw_rows)}")
+            if raw_rows:
+                st.write("**Header keys của dòng đầu:**", list(raw_rows[0].keys()))
+                st.write("**Dòng đầu tiên:**", raw_rows[0])
+            else:
+                first_row = store.worksheet.row_values(1)
+                st.write("**Row 1 (raw):**", first_row)
+                st.write("**SHEET_HEADERS expected:**", store.worksheet._spreadsheet is not None)
+        except Exception as exc:
+            st.error(f"Debug error: {exc}")
+
+
 def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
     title_col, refresh_col = st.columns([4, 1])
     with title_col:
@@ -346,6 +367,7 @@ def main() -> None:
 
     render_form(store, records)
     st.divider()
+    render_debug(store)
     render_records(store, records)
 
 

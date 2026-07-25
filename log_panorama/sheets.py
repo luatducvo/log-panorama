@@ -26,7 +26,9 @@ class PanoramaSheetStore:
 
     def ensure_headers(self) -> None:
         first_row = self.worksheet.row_values(1)
-        if first_row != SHEET_HEADERS:
+        # Strip mỗi cell để tránh lỗi khoảng trắng/BOM khi so sánh
+        first_row_clean = [v.strip() for v in first_row]
+        if first_row_clean != SHEET_HEADERS:
             end_col = chr(ord("A") + len(SHEET_HEADERS) - 1)
             self.worksheet.update(range_name=f"A1:{end_col}1", values=[SHEET_HEADERS])
 
