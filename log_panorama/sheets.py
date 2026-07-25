@@ -6,7 +6,7 @@ from typing import Any
 import gspread
 from google.oauth2.service_account import Credentials
 
-from log_panorama.models import PanoramaLocation, SHEET_HEADERS, normalize_sheet_records
+from log_panorama.models import PLACE_HEADERS, PanoramaLocation, PlaceCode, SHEET_HEADERS, normalize_sheet_records
 
 
 SCOPES = [
@@ -17,6 +17,44 @@ SCOPES = [
 
 class SheetConfigError(RuntimeError):
     """Raised when Google Sheets configuration is missing or invalid."""
+
+
+class PlaceCodeSheetStore:
+    def __init__(self, worksheet: Any):
+        self.worksheet = worksheet
+        self.ensure_headers()
+
+    def ensure_headers(self) -> None:
+        first_row = self.worksheet.row_values(1)
+        first_row_clean = [v.strip() for v in first_row]
+        if first_row_clean != PLACE_HEADERS:
+            end_col = chr(ord("A") + len(PLACE_HEADERS) - 1)
+            self.worksheet.update(range_name=f"A1:{end_col}1", values=[PLACE_HEADERS])
+
+    def list_places(self) -> list[PlaceCode]:
+        rows = self.worksheet.get_all_records()
+        return [
+            PlaceCode.from_sheet_row(row)
+            for row in rows
+            if str(row.get("Mã địa điểm", "")).strip()
+        ]
+
+    def upsert(self, place: PlaceCode) -> str:
+        row_index = self._find_row_index(place)
+        if row_index is None:
+            self.worksheet.append_row(place.to_sheet_row(), value_input_option="USER_ENTERED")
+            return "created"
+        self.worksheet.update(
+            range_name=f"A{row_index}:B{row_index}",
+            values=[place.to_sheet_row()],
+        )
+        return "updated"
+
+    def _find_row_index(self, target: PlaceCode) -> int | None:
+        for offset, place in enumerate(self.list_places(), start=2):
+            if place.key == target.key:
+                return offset
+        return None
 
 
 class PanoramaSheetStore:
@@ -68,10 +106,9 @@ class PanoramaSheetStore:
         return None
 
 
-def build_store_from_secrets(secrets: Mapping[str, Any]) -> PanoramaSheetStore:
+def _connect(secrets: Mapping[str, Any]) -> gspread.Spreadsheet:
     try:
         sheet_id = secrets["sheets"]["spreadsheet_id"]
-        worksheet_name = secrets["sheets"].get("worksheet_name", "panorama_logs")
         service_account_info = dict(secrets["gcp_service_account"])
     except KeyError as exc:
         raise SheetConfigError(
@@ -83,16 +120,27 @@ def build_store_from_secrets(secrets: Mapping[str, Any]) -> PanoramaSheetStore:
         scopes=SCOPES,
     )
     client = gspread.authorize(credentials)
-    spreadsheet = client.open_by_key(sheet_id)
+    return client.open_by_key(sheet_id)
 
+
+def build_stores(secrets: Mapping[str, Any]) -> tuple[PanoramaSheetStore, PlaceCodeSheetStore]:
+    spreadsheet = _connect(secrets)
+
+    log_ws_name = secrets["sheets"].get("worksheet_name", "panorama_logs")
     try:
-        worksheet = spreadsheet.worksheet(worksheet_name)
+        log_ws = spreadsheet.worksheet(log_ws_name)
     except gspread.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(
-            title=worksheet_name,
-            rows=1000,
-            cols=len(SHEET_HEADERS),
+        log_ws = spreadsheet.add_worksheet(
+            title=log_ws_name, rows=1000, cols=len(SHEET_HEADERS),
         )
 
-    return PanoramaSheetStore(worksheet)
+    place_ws_name = secrets["sheets"].get("place_codes_worksheet_name", "place_codes")
+    try:
+        place_ws = spreadsheet.worksheet(place_ws_name)
+    except gspread.WorksheetNotFound:
+        place_ws = spreadsheet.add_worksheet(
+            title=place_ws_name, rows=100, cols=len(PLACE_HEADERS),
+        )
+
+    return PanoramaSheetStore(log_ws), PlaceCodeSheetStore(place_ws)
 

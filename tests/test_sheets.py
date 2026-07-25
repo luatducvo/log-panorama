@@ -1,4 +1,4 @@
-from log_panorama.models import PanoramaLocation, SHEET_HEADERS
+from log_panorama.models import PLACE_HEADERS, PanoramaLocation, SHEET_HEADERS
 from log_panorama.sheets import PanoramaSheetStore
 
 
@@ -13,11 +13,14 @@ class FakeWorksheet:
 
     def update(self, range_name, values):
         self.updated_ranges.append((range_name, values))
-        if range_name == "A1:E1":
+        parts = range_name.split(":")
+        col_end = parts[1][0]
+        row_end = int(parts[1][1:])
+        if row_end == 1:
             self.headers = values[0]
             return
 
-        row_number = int(range_name.split(":")[0][1:])
+        row_number = int(parts[0][1:])
         self.rows[row_number - 2] = dict(zip(SHEET_HEADERS, values[0], strict=True))
 
     def get_all_records(self):
@@ -45,18 +48,18 @@ def test_upsert_appends_new_record():
     result = store.upsert(record)
 
     assert result == "created"
-    assert worksheet.rows[0]["place_code"] == "PANO-001"
+    assert worksheet.rows[0]["Mã địa điểm"] == "PANO-001"
 
 
 def test_upsert_updates_existing_place_hotspot_pair():
     worksheet = FakeWorksheet(
         rows=[
             {
-                "place_code": "PANO-001",
-                "place_name": "Lobby",
-                "hotspot": "door",
-                "connects_to": "old",
-                "updated_at": "",
+                "Mã địa điểm": "PANO-001",
+                "Mô tả địa điểm": "Lobby",
+                "Hotspot": "door",
+                "Hotspot nối tới": "old",
+                "Cập nhật": "",
             }
         ]
     )
@@ -66,19 +69,19 @@ def test_upsert_updates_existing_place_hotspot_pair():
     result = store.upsert(record)
 
     assert result == "updated"
-    assert worksheet.rows[0]["place_name"] == "Lobby New"
-    assert worksheet.rows[0]["connects_to"] == "new"
+    assert worksheet.rows[0]["Mô tả địa điểm"] == "Lobby New"
+    assert worksheet.rows[0]["Hotspot nối tới"] == "new"
 
 
 def test_delete_removes_matching_record():
     worksheet = FakeWorksheet(
         rows=[
             {
-                "place_code": "PANO-001",
-                "place_name": "Lobby",
-                "hotspot": "door",
-                "connects_to": "hall",
-                "updated_at": "",
+                "Mã địa điểm": "PANO-001",
+                "Mô tả địa điểm": "Lobby",
+                "Hotspot": "door",
+                "Hotspot nối tới": "hall",
+                "Cập nhật": "",
             }
         ]
     )

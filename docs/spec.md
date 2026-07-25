@@ -1,7 +1,7 @@
 # Spec: Panorama Location Log Sheet
 
 ## Objective
-Build a mobile-friendly Streamlit app for managing 360 panorama location logs. Users can create, edit, delete, search, and view records with these fields: place code, place name, hotspot, and destination hotspot. Data is persisted to Google Sheets through a service account.
+Build a mobile-friendly Streamlit app for managing 360 panorama location logs. Users can create, edit, delete, search, and view records with these fields: place code, place description, hotspot, and destination hotspot. Data is persisted to Google Sheets through a service account.
 
 ## Tech Stack
 - Python 3.12

@@ -4,9 +4,35 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 
+PLACE_HEADERS = [
+    "Mã địa điểm",
+    "Mô tả địa điểm",
+]
+
+
+@dataclass(frozen=True)
+class PlaceCode:
+    code: str
+    name: str = ""
+
+    @classmethod
+    def from_sheet_row(cls, row: dict[str, object]) -> "PlaceCode":
+        return cls(
+            code=str(row.get("Mã địa điểm", "")).strip(),
+            name=str(row.get("Mô tả địa điểm", "")).strip(),
+        )
+
+    def to_sheet_row(self) -> list[str]:
+        return [self.code, self.name]
+
+    @property
+    def key(self) -> str:
+        return self.code.casefold()
+
+
 SHEET_HEADERS = [
     "Mã địa điểm",
-    "Tên địa điểm",
+    "Mô tả địa điểm",
     "Hotspot",
     "Hotspot nối tới",
     "Vĩ độ",
@@ -55,7 +81,7 @@ class PanoramaLocation:
     def from_sheet_row(cls, row: dict[str, object]) -> "PanoramaLocation":
         return cls(
             place_code=str(row.get("Mã địa điểm", "")).strip(),
-            place_name=str(row.get("Tên địa điểm", "")).strip(),
+            place_name=str(row.get("Mô tả địa điểm", "")).strip(),
             hotspot=str(row.get("Hotspot", "")).strip(),
             connects_to=str(row.get("Hotspot nối tới", "")).strip(),
             latitude=str(row.get("Vĩ độ", "")).strip(),
@@ -72,7 +98,7 @@ class PanoramaLocation:
         if not self.place_code:
             missing.append("mã địa điểm")
         if not self.place_name:
-            missing.append("tên địa điểm")
+            missing.append("mô tả địa điểm")
         if not self.hotspot:
             missing.append("hotspot của địa điểm")
 

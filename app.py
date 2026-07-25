@@ -3,8 +3,13 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from log_panorama.models import PanoramaLocation, ValidationError
-from log_panorama.sheets import PanoramaSheetStore, SheetConfigError, build_store_from_secrets
+from log_panorama.models import PanoramaLocation, PlaceCode, ValidationError
+from log_panorama.sheets import (
+    PanoramaSheetStore,
+    PlaceCodeSheetStore,
+    SheetConfigError,
+    build_stores,
+)
 
 
 st.set_page_config(
@@ -122,8 +127,8 @@ def apply_mobile_styles() -> None:
 
 
 @st.cache_resource(show_spinner=False)
-def get_store() -> PanoramaSheetStore:
-    return build_store_from_secrets(st.secrets)
+def get_stores() -> tuple[PanoramaSheetStore, PlaceCodeSheetStore]:
+    return build_stores(st.secrets)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -131,12 +136,33 @@ def load_records(_store: PanoramaSheetStore) -> list[PanoramaLocation]:
     return _store.list_records()
 
 
+def load_places(_store: PlaceCodeSheetStore) -> list[PlaceCode]:
+    places = _store.list_places()
+    if not places:
+        _seed_initial_places(_store)
+        places = _store.list_places()
+    return places
+
+
+def _seed_initial_places(store: PlaceCodeSheetStore) -> None:
+    initial = {
+        "P360-GL-001": "Quảng trường Đại Đoàn Kết",
+        "P360-GL-002": "Bảo tàng Gia Lai",
+        "P360-GL-003": "Biển Hồ Pleiku",
+        "P360-GL-004": "Chùa Minh Thành",
+        "P360-GL-005": "Chùa Bửu Minh",
+        "P360-GL-006": "Công viên Diên Hồng",
+    }
+    for code, name in initial.items():
+        store.upsert(PlaceCode(code=code, name=name))
+
+
 def records_to_dataframe(records: list[PanoramaLocation]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
                 "Mã địa điểm": record.place_code,
-                "Tên địa điểm": record.place_name,
+                "Mô tả địa điểm": record.place_name,
                 "Hotspot": record.hotspot,
                 "Hotspot nối tới": record.connects_to,
                 "Vĩ độ": record.latitude,
@@ -156,25 +182,21 @@ def render_config_error(error: Exception) -> None:
     )
 
 
-KNOWN_PLACES: dict[str, str] = {
-    "P360-GL-001": "Quảng trường Đại Đoàn Kết",
-    "P360-GL-002": "Bảo tàng Gia Lai",
-    "P360-GL-003": "Biển Hồ Pleiku",
-    "P360-GL-004": "Chùa Minh Thành",
-    "P360-GL-005": "Chùa Bửu Minh",
-    "P360-GL-006": "Công viên Diên Hồng",
-}
+def render_form(
+    store: PanoramaSheetStore,
+    place_store: PlaceCodeSheetStore,
+    records: list[PanoramaLocation],
+    places: list[PlaceCode],
+) -> None:
+    # Build lookup maps
+    place_map = {p.code: p.name for p in places}
+    sheet_map = {record.place_code: record.place_name for record in records}
 
-
-def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
-    with st.form("location_form", clear_on_submit=False):
-        # st.subheader("Quản lý log")
-
-        # Merge known places with any extra codes already in the sheet
-        sheet_map = {record.place_code: record.place_name for record in records}
-        combined: dict[str, str] = {**KNOWN_PLACES, **sheet_map}
-        quick_options = [""] + [
-            f"{code} – {name}" for code, name in sorted(combined.items())
+    # Popover for adding new place code (outside form)
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        quick_options = [
+            f"{p.code} – {p.name}" for p in sorted(places, key=lambda x: x.code)
         ]
         selected_quick = st.selectbox(
             "Chọn nhanh địa điểm",
@@ -182,10 +204,22 @@ def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> N
             index=0,
         )
         selected_code = selected_quick.split(" – ")[0] if selected_quick else ""
+    with col2:
+        st.write("")
+        with st.popover("➕ Thêm mới"):
+            new_code = st.text_input("Mã địa điểm", placeholder="VD: P360-CMT-001")
+            new_desc = st.text_input("Mô tả địa điểm", placeholder="VD: Chùa Minh Thành")
+            if st.button("Thêm vào danh sách", type="primary", use_container_width=True):
+                if new_code.strip():
+                    place_store.upsert(PlaceCode(code=new_code.strip(), name=new_desc.strip()))
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning("Vui lòng nhập mã địa điểm")
 
+    with st.form("location_form", clear_on_submit=False):
         place_code = selected_code
-        known_name = combined.get(selected_code, "")
-        place_name = st.text_input("Tên địa điểm", value=known_name, placeholder="VD: Sảnh chính")
+        place_name = st.text_input("Mô tả địa điểm", placeholder="VD: Cổng chính")
 
         hotspot = st.text_input("Hotspot của địa điểm", placeholder="VD: CMT-EXT-001")
         st.caption(
@@ -294,7 +328,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
             with st.form("edit_form", clear_on_submit=False):
                 st.caption(f"Đang chỉnh sửa: **{editing.place_code} | {editing.hotspot}**")
 
-                edit_name = st.text_input("Tên địa điểm", value=editing.place_name)
+                edit_name = st.text_input("Mô tả địa điểm", value=editing.place_name)
                 edit_hotspot = st.text_input("Hotspot của địa điểm", value=editing.hotspot)
                 edit_connects_to = st.text_input("Hotspot nối tới", value=editing.connects_to)
 
@@ -355,8 +389,9 @@ def main() -> None:
     )
 
     try:
-        store = get_store()
+        store, place_store = get_stores()
         records = load_records(store)
+        places = load_places(place_store)
     except (SheetConfigError, KeyError) as exc:
         render_config_error(exc)
         return
@@ -364,7 +399,7 @@ def main() -> None:
         st.error(f"Không kết nối được Google Sheets: {exc}")
         return
 
-    render_form(store, records)
+    render_form(store, place_store, records, places)
     st.divider()
     render_debug(store)
     render_records(store, records)

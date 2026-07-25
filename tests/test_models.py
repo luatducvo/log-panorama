@@ -22,16 +22,16 @@ def test_from_form_requires_place_code_name_and_hotspot():
     with pytest.raises(ValidationError) as exc:
         PanoramaLocation.from_form("", " ", "")
 
-    assert "ma dia diem" in str(exc.value)
-    assert "ten dia diem" in str(exc.value)
-    assert "hotspot cua dia diem" in str(exc.value)
+    assert "mã địa điểm" in str(exc.value)
+    assert "mô tả địa điểm" in str(exc.value)
+    assert "hotspot của địa điểm" in str(exc.value)
 
 
 def test_normalize_sheet_records_skips_empty_rows():
     records = normalize_sheet_records(
         [
-            {"place_code": "PANO-001", "place_name": "Lobby", "hotspot": "door"},
-            {"place_code": "", "place_name": "", "hotspot": ""},
+            {"Mã địa điểm": "PANO-001", "Mô tả địa điểm": "Lobby", "Hotspot": "door"},
+            {"Mã địa điểm": "", "Mô tả địa điểm": "", "Hotspot": ""},
         ]
     )
 

@@ -16,10 +16,14 @@ uv run streamlit run app.py
 3. Dien `spreadsheet_id`, `worksheet_name`, va thong tin service account.
 4. Share Google Sheet cho email trong `client_email` voi quyen Editor.
 
-Worksheet se duoc tao neu chua ton tai. Hang dau tien gom:
+Hai worksheet se duoc tao neu chua ton tai:
+- `panorama_logs` (co the cau hinh bang `worksheet_name`) — luu log hotspot
+- `place_codes` (co the cau hinh bang `place_codes_worksheet_name`) — danh sach ma dia diem
+
+Headers cua `panorama_logs`:
 
 ```text
-place_code, place_name, hotspot, connects_to, updated_at
+Mã địa điểm, Mô tả địa điểm, Hotspot, Hotspot nối tới, Vĩ độ, Kinh độ, Cập nhật
 ```
 
 ## Kiem thu
