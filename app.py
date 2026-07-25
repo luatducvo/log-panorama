@@ -3,8 +3,16 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from log_panorama.models import PanoramaLocation, PlaceCode, ValidationError
+from log_panorama.models import (
+    Member,
+    PanoramaLocation,
+    PlaceCode,
+    ValidationError,
+    make_abbreviation,
+    suggest_next_hotspot_number,
+)
 from log_panorama.sheets import (
+    MemberSheetStore,
     PanoramaSheetStore,
     PlaceCodeSheetStore,
     SheetConfigError,
@@ -127,7 +135,7 @@ def apply_mobile_styles() -> None:
 
 
 @st.cache_resource(show_spinner=False)
-def get_stores() -> tuple[PanoramaSheetStore, PlaceCodeSheetStore]:
+def get_stores() -> tuple[PanoramaSheetStore, PlaceCodeSheetStore, MemberSheetStore]:
     return build_stores(st.secrets)
 
 
@@ -142,6 +150,10 @@ def load_places(_store: PlaceCodeSheetStore) -> list[PlaceCode]:
         _seed_initial_places(_store)
         places = _store.list_places()
     return places
+
+
+def load_members(_store: MemberSheetStore) -> list[Member]:
+    return _store.list_members()
 
 
 def _seed_initial_places(store: PlaceCodeSheetStore) -> None:
@@ -164,7 +176,8 @@ def records_to_dataframe(records: list[PanoramaLocation]) -> pd.DataFrame:
                 "Mã địa điểm": record.place_code,
                 "Mô tả địa điểm": record.place_name,
                 "Hotspot": record.hotspot,
-                "Hotspot nối tới": record.connects_to,
+                "Hotspot nối": record.connects_to,
+                "Thành viên": record.member,
                 "Vĩ độ": record.latitude,
                 "Kinh độ": record.longitude,
                 "Cập nhật": record.updated_at,
@@ -185,8 +198,10 @@ def render_config_error(error: Exception) -> None:
 def render_form(
     store: PanoramaSheetStore,
     place_store: PlaceCodeSheetStore,
+    member_store: MemberSheetStore,
     records: list[PanoramaLocation],
     places: list[PlaceCode],
+    members: list[Member],
 ) -> None:
     # Build lookup maps
     place_map = {p.code: p.name for p in places}
@@ -217,18 +232,90 @@ def render_form(
                 else:
                     st.warning("Vui lòng nhập mã địa điểm")
 
+    # Member management
+    mcol1, mcol2 = st.columns([4, 1])
+    with mcol1:
+        member_options = [""] + sorted(
+            [f"{m.code} – {m.name}" for m in members],
+            key=lambda x: x.casefold(),
+        )
+        member = st.selectbox(
+            "Thành viên phụ trách",
+            member_options,
+            format_func=lambda x: "— Chọn thành viên —" if not x else x,
+        )
+    with mcol2:
+        st.write("")
+        with st.popover("👤 Quản lý"):
+            add_tab, edit_tab, del_tab = st.tabs(["Thêm", "Sửa", "Xoá"])
+            with add_tab:
+                new_member_code = st.text_input("Mã thành viên", placeholder="VD: NV001", key="new_member_code")
+                new_member_name = st.text_input("Tên thành viên", placeholder="VD: Nguyễn Văn A", key="new_member_name")
+                if st.button("Thêm", type="primary", use_container_width=True):
+                    if new_member_code.strip():
+                        member_store.upsert(Member(code=new_member_code.strip(), name=new_member_name.strip()))
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.warning("Vui lòng nhập mã thành viên")
+            with edit_tab:
+                if members:
+                    edit_opts = {f"{m.code} – {m.name}": m for m in sorted(members, key=lambda x: x.code)}
+                    member_to_edit = st.selectbox("Chọn thành viên", list(edit_opts.keys()), key="member_edit_select")
+                    sm = edit_opts[member_to_edit]
+                    edit_member_name = st.text_input("Tên mới", value=sm.name, key="edit_member_name")
+                    if st.button("Cập nhật", type="primary", use_container_width=True):
+                        member_store.upsert(Member(code=sm.code, name=edit_member_name.strip()))
+                        st.cache_data.clear()
+                        st.rerun()
+                else:
+                    st.caption("Chưa có thành viên nào.")
+            with del_tab:
+                if members:
+                    del_opts = {f"{m.code} – {m.name}": m for m in sorted(members, key=lambda x: x.code)}
+                    member_to_del = st.selectbox("Chọn thành viên", list(del_opts.keys()), key="member_del_select")
+                    if st.button("Xoá", type="secondary", use_container_width=True):
+                        md = del_opts[member_to_del]
+                        if member_store.delete(md.code):
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.warning("Không tìm thấy thành viên.")
+                else:
+                    st.caption("Chưa có thành viên nào.")
+
+    # Auto-generate abbreviation from place name
+    place_full_name = place_map.get(selected_code, "")
+    abbreviation = make_abbreviation(place_full_name)
+
+    zone = st.selectbox(
+        "Khu vực",
+        ["", "EXT", "INT"],
+        key="zone_select",
+        format_func=lambda x: {"": "— Chọn khu vực —", "EXT": "EXT – Ngoài trời", "INT": "INT – Bên trong"}.get(x, x),
+    )
+
+    if abbreviation and zone:
+        next_num = suggest_next_hotspot_number(records, abbreviation, zone)
+        hotspot_value = f"{abbreviation}-{zone}-{next_num}"
+        st.info(f"Hotspot: **{hotspot_value}**")
+    else:
+        hotspot_value = ""
+
     with st.form("location_form", clear_on_submit=False):
         place_code = selected_code
         place_name = st.text_input("Mô tả địa điểm", placeholder="VD: Cổng chính")
 
-        hotspot = st.text_input("Hotspot của địa điểm", placeholder="VD: CMT-EXT-001")
-        st.caption(
-            "**Quy tắc đặt tên hotspot:** `[Mã địa điểm]-[Khu vực]-[Số thứ tự]`  \n"
-            "• **Mã địa điểm** — viết tắt tên địa điểm, VD: `CMT` = Chùa Minh Thành  \n"
-            "• **Khu vực** — `EXT` ngoài trời · `INT` bên trong  \n"
-            "• **Số thứ tự** — 3 chữ số, VD: `001`, `002`"
+        same_abbr_hotspots = sorted(
+            r.hotspot for r in records
+            if r.hotspot.casefold().startswith(abbreviation.casefold())
+            and r.hotspot != hotspot_value
         )
-        connects_to = st.text_input("Hotspot nối tới", placeholder="VD: CMT-EXT-001")
+        connects_to = st.selectbox(
+            "Hotspot nối",
+            [""] + same_abbr_hotspots,
+            format_func=lambda x: "— Không kết nối —" if not x else x,
+        )
 
         lat_col, lon_col = st.columns(2)
         with lat_col:
@@ -241,8 +328,13 @@ def render_form(
     if not submitted:
         return
 
+    if not hotspot_value:
+        st.warning("Vui lòng chọn khu vực (EXT/INT)")
+        return
+
+    member_code = member.split(" – ")[0] if member else ""
     try:
-        record = PanoramaLocation.from_form(place_code, place_name, hotspot, connects_to, latitude, longitude)
+        record = PanoramaLocation.from_form(place_code, place_name, hotspot_value, connects_to, member_code, latitude, longitude)
         result = store.upsert(record)
     except ValidationError as exc:
         st.warning(str(exc))
@@ -278,7 +370,7 @@ def render_debug(store: PanoramaSheetStore) -> None:
             st.error(f"Debug error: {exc}")
 
 
-def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
+def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation], places: list[PlaceCode], members: list[Member]) -> None:
     title_col, refresh_col = st.columns([4, 1])
     with title_col:
         st.subheader("Danh sách log")
@@ -325,12 +417,69 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
             )
             editing: PanoramaLocation = edit_options[edit_selected]
 
+            # Parse existing hotspot for zone
+            edit_parts = editing.hotspot.split("-")
+            edit_zone_current = edit_parts[1] if len(edit_parts) >= 2 and edit_parts[1] in ("EXT", "INT") else ""
+
+            # Compute abbreviation from place name
+            edit_place_map = {p.code: p.name for p in places}
+            edit_place_full_name = edit_place_map.get(editing.place_code, "")
+            edit_abbreviation = make_abbreviation(edit_place_full_name)
+
+            edit_zone = st.selectbox(
+                "Khu vực",
+                ["", "EXT", "INT"],
+                index=["", "EXT", "INT"].index(edit_zone_current) if edit_zone_current in ("EXT", "INT") else 0,
+                key="edit_zone",
+                format_func=lambda x: {"": "— Chọn khu vực —", "EXT": "EXT – Ngoài trời", "INT": "INT – Bên trong"}.get(x, x),
+            )
+
+            if edit_abbreviation and edit_zone:
+                edit_next_num = suggest_next_hotspot_number(records, edit_abbreviation, edit_zone)
+                edit_hotspot_value = f"{edit_abbreviation}-{edit_zone}-{edit_next_num}"
+                st.info(f"Hotspot: **{edit_hotspot_value}**")
+            else:
+                edit_hotspot_value = ""
+
             with st.form("edit_form", clear_on_submit=False):
                 st.caption(f"Đang chỉnh sửa: **{editing.place_code} | {editing.hotspot}**")
 
                 edit_name = st.text_input("Mô tả địa điểm", value=editing.place_name)
-                edit_hotspot = st.text_input("Hotspot của địa điểm", value=editing.hotspot)
-                edit_connects_to = st.text_input("Hotspot nối tới", value=editing.connects_to)
+
+                same_abbr_hotspots = sorted(
+                    r.hotspot for r in records
+                    if r.hotspot.casefold().startswith(edit_abbreviation.casefold())
+                    and r.hotspot != editing.hotspot
+                )
+                edit_connects_options = [""] + same_abbr_hotspots
+                edit_connects_index = 0
+                if editing.connects_to in edit_connects_options:
+                    edit_connects_index = edit_connects_options.index(editing.connects_to)
+                edit_connects_to = st.selectbox(
+                    "Hotspot nối",
+                    edit_connects_options,
+                    index=edit_connects_index,
+                    format_func=lambda x: "— Không kết nối —" if not x else x,
+                )
+
+                edit_member_options = [""] + sorted(
+                    [f"{m.code} – {m.name}" for m in members],
+                    key=lambda x: x.casefold(),
+                )
+                edit_member_index = 0
+                edit_member_display = ""
+                if editing.member:
+                    for i, opt in enumerate(edit_member_options):
+                        if opt.startswith(editing.member + " –"):
+                            edit_member_index = i
+                            edit_member_display = opt
+                            break
+                edit_member = st.selectbox(
+                    "Thành viên",
+                    edit_member_options,
+                    index=edit_member_index,
+                    format_func=lambda x: "— Chọn thành viên —" if not x else x,
+                )
 
                 lat_col, lon_col = st.columns(2)
                 with lat_col:
@@ -341,21 +490,24 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
                 save_edit = st.form_submit_button("Lưu chỉnh sửa", width="stretch")
 
             if save_edit:
-                try:
-                    updated = PanoramaLocation.from_form(
-                        editing.place_code, edit_name, edit_hotspot,
-                        edit_connects_to, edit_lat, edit_lon,
-                    )
-                    # Nếu hotspot đổi tên → xóa record cũ trước
-                    if updated.hotspot.casefold() != editing.hotspot.casefold():
-                        store.delete(editing.place_code, editing.hotspot)
-                    store.upsert(updated)
-                except ValidationError as exc:
-                    st.warning(str(exc))
+                if not edit_hotspot_value:
+                    st.warning("Vui lòng chọn khu vực (EXT/INT)")
                 else:
-                    st.cache_data.clear()
-                    st.success("Đã lưu chỉnh sửa.")
-                    st.rerun()
+                    edit_member_code = edit_member.split(" – ")[0] if edit_member else ""
+                    try:
+                        updated = PanoramaLocation.from_form(
+                            editing.place_code, edit_name, edit_hotspot_value,
+                            edit_connects_to, edit_member_code, edit_lat, edit_lon,
+                        )
+                        if updated.hotspot.casefold() != editing.hotspot.casefold():
+                            store.delete(editing.place_code, editing.hotspot)
+                        store.upsert(updated)
+                    except ValidationError as exc:
+                        st.warning(str(exc))
+                    else:
+                        st.cache_data.clear()
+                        st.success("Đã lưu chỉnh sửa.")
+                        st.rerun()
 
     with st.expander("🗑️ Xóa log"):
         if not records:
@@ -389,9 +541,10 @@ def main() -> None:
     )
 
     try:
-        store, place_store = get_stores()
+        store, place_store, member_store = get_stores()
         records = load_records(store)
         places = load_places(place_store)
+        members = load_members(member_store)
     except (SheetConfigError, KeyError) as exc:
         render_config_error(exc)
         return
@@ -399,10 +552,10 @@ def main() -> None:
         st.error(f"Không kết nối được Google Sheets: {exc}")
         return
 
-    render_form(store, place_store, records, places)
+    render_form(store, place_store, member_store, records, places, members)
     st.divider()
     render_debug(store)
-    render_records(store, records)
+    render_records(store, records, places, members)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,15 @@ from typing import Any
 import gspread
 from google.oauth2.service_account import Credentials
 
-from log_panorama.models import PLACE_HEADERS, PanoramaLocation, PlaceCode, SHEET_HEADERS, normalize_sheet_records
+from log_panorama.models import (
+    MEMBER_HEADERS,
+    Member,
+    PLACE_HEADERS,
+    PanoramaLocation,
+    PlaceCode,
+    SHEET_HEADERS,
+    normalize_sheet_records,
+)
 
 
 SCOPES = [
@@ -57,6 +65,52 @@ class PlaceCodeSheetStore:
         return None
 
 
+class MemberSheetStore:
+    def __init__(self, worksheet: Any):
+        self.worksheet = worksheet
+        self.ensure_headers()
+
+    def ensure_headers(self) -> None:
+        first_row = self.worksheet.row_values(1)
+        first_row_clean = [v.strip() for v in first_row]
+        if first_row_clean != MEMBER_HEADERS:
+            end_col = chr(ord("A") + len(MEMBER_HEADERS) - 1)
+            self.worksheet.update(range_name=f"A1:{end_col}1", values=[MEMBER_HEADERS])
+
+    def list_members(self) -> list[Member]:
+        rows = self.worksheet.get_all_records()
+        return [
+            Member.from_sheet_row(row)
+            for row in rows
+            if str(row.get("Mã thành viên", "")).strip()
+        ]
+
+    def upsert(self, member: Member) -> str:
+        row_index = self._find_row_index(member)
+        if row_index is None:
+            self.worksheet.append_row(member.to_sheet_row(), value_input_option="USER_ENTERED")
+            return "created"
+        self.worksheet.update(
+            range_name=f"A{row_index}:B{row_index}",
+            values=[member.to_sheet_row()],
+        )
+        return "updated"
+
+    def delete(self, code: str) -> bool:
+        target = Member(code=code.strip())
+        row_index = self._find_row_index(target)
+        if row_index is None:
+            return False
+        self.worksheet.delete_rows(row_index)
+        return True
+
+    def _find_row_index(self, target: Member) -> int | None:
+        for offset, member in enumerate(self.list_members(), start=2):
+            if member.key == target.key:
+                return offset
+        return None
+
+
 class PanoramaSheetStore:
     def __init__(self, worksheet: Any):
         self.worksheet = worksheet
@@ -80,8 +134,9 @@ class PanoramaSheetStore:
             self.worksheet.append_row(record.to_sheet_row(), value_input_option="USER_ENTERED")
             return "created"
 
+        end_col = chr(ord("A") + len(record.to_sheet_row()) - 1)
         self.worksheet.update(
-            range_name=f"A{row_index}:G{row_index}",
+            range_name=f"A{row_index}:{end_col}{row_index}",
             values=[record.to_sheet_row()],
         )
         return "updated"
@@ -123,7 +178,7 @@ def _connect(secrets: Mapping[str, Any]) -> gspread.Spreadsheet:
     return client.open_by_key(sheet_id)
 
 
-def build_stores(secrets: Mapping[str, Any]) -> tuple[PanoramaSheetStore, PlaceCodeSheetStore]:
+def build_stores(secrets: Mapping[str, Any]) -> tuple[PanoramaSheetStore, PlaceCodeSheetStore, MemberSheetStore]:
     spreadsheet = _connect(secrets)
 
     log_ws_name = secrets["sheets"].get("worksheet_name", "panorama_logs")
@@ -142,5 +197,13 @@ def build_stores(secrets: Mapping[str, Any]) -> tuple[PanoramaSheetStore, PlaceC
             title=place_ws_name, rows=100, cols=len(PLACE_HEADERS),
         )
 
-    return PanoramaSheetStore(log_ws), PlaceCodeSheetStore(place_ws)
+    member_ws_name = secrets["sheets"].get("members_worksheet_name", "members")
+    try:
+        member_ws = spreadsheet.worksheet(member_ws_name)
+    except gspread.WorksheetNotFound:
+        member_ws = spreadsheet.add_worksheet(
+            title=member_ws_name, rows=100, cols=len(MEMBER_HEADERS),
+        )
+
+    return PanoramaSheetStore(log_ws), PlaceCodeSheetStore(place_ws), MemberSheetStore(member_ws)
 

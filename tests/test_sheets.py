@@ -1,5 +1,5 @@
-from log_panorama.models import PLACE_HEADERS, PanoramaLocation, SHEET_HEADERS
-from log_panorama.sheets import PanoramaSheetStore
+from log_panorama.models import MEMBER_HEADERS, Member, PLACE_HEADERS, PanoramaLocation, SHEET_HEADERS
+from log_panorama.sheets import MemberSheetStore, PanoramaSheetStore
 
 
 class FakeWorksheet:
@@ -21,13 +21,13 @@ class FakeWorksheet:
             return
 
         row_number = int(parts[0][1:])
-        self.rows[row_number - 2] = dict(zip(SHEET_HEADERS, values[0], strict=True))
+        self.rows[row_number - 2] = dict(zip(self.headers, values[0], strict=True))
 
     def get_all_records(self):
         return self.rows
 
     def append_row(self, values, value_input_option=None):
-        self.rows.append(dict(zip(SHEET_HEADERS, values, strict=True)))
+        self.rows.append(dict(zip(self.headers, values, strict=True)))
 
     def delete_rows(self, row_index):
         del self.rows[row_index - 2]
@@ -58,7 +58,7 @@ def test_upsert_updates_existing_place_hotspot_pair():
                 "Mã địa điểm": "PANO-001",
                 "Mô tả địa điểm": "Lobby",
                 "Hotspot": "door",
-                "Hotspot nối tới": "old",
+                "Hotspot nối": "old",
                 "Cập nhật": "",
             }
         ]
@@ -70,7 +70,31 @@ def test_upsert_updates_existing_place_hotspot_pair():
 
     assert result == "updated"
     assert worksheet.rows[0]["Mô tả địa điểm"] == "Lobby New"
-    assert worksheet.rows[0]["Hotspot nối tới"] == "new"
+    assert worksheet.rows[0]["Hotspot nối"] == "new"
+
+
+def test_member_store_repairs_missing_headers():
+    worksheet = FakeWorksheet(headers=[])
+    store = MemberSheetStore(worksheet)
+    assert worksheet.headers == MEMBER_HEADERS
+
+
+def test_member_store_upsert_appends_new():
+    worksheet = FakeWorksheet(headers=MEMBER_HEADERS)
+    store = MemberSheetStore(worksheet)
+    result = store.upsert(Member(code="NV001", name="Nguyễn Văn A"))
+    assert result == "created"
+    assert worksheet.rows[0]["Mã thành viên"] == "NV001"
+
+
+def test_member_store_delete():
+    worksheet = FakeWorksheet(
+        rows=[{"Mã thành viên": "NV001", "Tên thành viên": "Nguyễn Văn A"}],
+        headers=MEMBER_HEADERS,
+    )
+    store = MemberSheetStore(worksheet)
+    assert store.delete("NV001") is True
+    assert worksheet.rows == []
 
 
 def test_delete_removes_matching_record():
@@ -80,7 +104,7 @@ def test_delete_removes_matching_record():
                 "Mã địa điểm": "PANO-001",
                 "Mô tả địa điểm": "Lobby",
                 "Hotspot": "door",
-                "Hotspot nối tới": "hall",
+                "Hotspot nối": "hall",
                 "Cập nhật": "",
             }
         ]
