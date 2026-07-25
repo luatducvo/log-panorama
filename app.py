@@ -32,6 +32,7 @@ def apply_mobile_styles() -> None:
     st.markdown(
         """
         <style>
+        /* ===== Theme variables ===== */
         :root {
             --surface: #ffffff;
             --soft: #f6f7f9;
@@ -39,32 +40,40 @@ def apply_mobile_styles() -> None:
             --ink: #17202a;
             --muted: #5b6675;
             --accent: #0f766e;
+            --shadow: 0 1px 3px rgba(0,0,0,0.08);
+            color-scheme: light;
         }
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --surface: #1e2530;
-                --soft: #262f3d;
-                --border: #3a4556;
-                --ink: #e8edf4;
-                --muted: #9aa5b4;
-                --accent: #2dd4bf;
-            }
-        }
-        /* Streamlit dark theme override */
-        [data-theme="dark"] {
+        html[data-theme="dark"] {
             --surface: #1e2530;
             --soft: #262f3d;
             --border: #3a4556;
             --ink: #e8edf4;
             --muted: #9aa5b4;
             --accent: #2dd4bf;
+            --shadow: 0 1px 3px rgba(0,0,0,0.3);
+            color-scheme: dark;
         }
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) {
+                --surface: #1e2530;
+                --soft: #262f3d;
+                --border: #3a4556;
+                --ink: #e8edf4;
+                --muted: #9aa5b4;
+                --accent: #2dd4bf;
+                --shadow: 0 1px 3px rgba(0,0,0,0.3);
+                color-scheme: dark;
+            }
+        }
+
+        /* ===== Layout ===== */
         .block-container {
             padding-top: 0.5rem;
-            padding-bottom: 5rem;
+            padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
             max-width: 980px;
         }
-        /* Ẩn header toolbar mặc định của Streamlit */
+
+        /* Hide Streamlit chrome */
         header[data-testid="stHeader"] {
             height: 0;
             min-height: 0;
@@ -73,16 +82,84 @@ def apply_mobile_styles() -> None:
         div[data-testid="stDecoration"] {
             display: none;
         }
-        h1, h2, h3, p, label, span {
+
+        /* ===== Typography ===== */
+        h1, h2, h3, h4, p, label, span, li, strong, td, th {
             letter-spacing: 0;
             color: var(--ink) !important;
         }
+
+        /* ===== Sticky app header ===== */
+        .pano-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0.6rem 0;
+            margin-bottom: 0.5rem;
+        }
+        .pano-title-main {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--ink);
+            display: block;
+            line-height: 1.3;
+        }
+        .pano-title-sub {
+            font-size: 0.76rem;
+            color: var(--muted);
+            display: block;
+            line-height: 1.3;
+        }
+        .pano-theme-btn {
+            background: var(--soft);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            width: 42px;
+            height: 42px;
+            font-size: 1.25rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 0;
+            line-height: 1;
+        }
+        .pano-theme-btn:hover {
+            border-color: var(--accent);
+        }
+        .pano-theme-btn:active {
+            transform: scale(0.92);
+        }
+        .pano-theme-btn .icon-sun { display: none; }
+        .pano-theme-btn .icon-moon { display: inline; }
+        html[data-theme="dark"] .pano-theme-btn .icon-sun { display: inline; }
+        html[data-theme="dark"] .pano-theme-btn .icon-moon { display: none; }
+
+        /* ===== App background ===== */
+        .stApp,
+        section[data-testid="stMain"],
+        section[data-testid="stSidebar"],
+        div[data-testid="stAppViewContainer"],
+        div[data-testid="stVerticalBlock"] {
+            background-color: var(--surface);
+        }
+
+        /* ===== Forms ===== */
         div[data-testid="stForm"] {
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 10px;
             background: var(--surface);
             padding: 1rem;
         }
+
+        /* ===== Buttons ===== */
         .stButton > button,
         .stDownloadButton > button,
         div[data-testid="stFormSubmitButton"] button {
@@ -90,6 +167,8 @@ def apply_mobile_styles() -> None:
             border-radius: 8px;
             font-weight: 650;
         }
+
+        /* ===== Text inputs ===== */
         .stTextInput input,
         .stSelectbox div[data-baseweb="select"] {
             min-height: 44px;
@@ -98,6 +177,41 @@ def apply_mobile_styles() -> None:
             color: var(--ink) !important;
             border-color: var(--border) !important;
         }
+        .stTextInput input::placeholder {
+            color: var(--muted) !important;
+            opacity: 1;
+        }
+        .stTextInput input:focus {
+            border-color: var(--accent) !important;
+        }
+
+        /* ===== Selectbox dropdown menu ===== */
+        [data-baseweb="select"] span,
+        [data-baseweb="select"] div {
+            color: var(--ink) !important;
+        }
+        [data-baseweb="menu"] {
+            background-color: var(--surface) !important;
+            color: var(--ink) !important;
+        }
+        [data-baseweb="menu"] li {
+            color: var(--ink) !important;
+            background-color: var(--surface) !important;
+        }
+        [data-baseweb="menu"] li:hover,
+        [data-baseweb="menu"] li[aria-selected="true"] {
+            background-color: var(--soft) !important;
+        }
+
+        /* ===== Checkbox ===== */
+        .stCheckbox label,
+        .stCheckbox span,
+        div[data-testid="stCheckbox"] span,
+        div[data-testid="stCheckbox"] p {
+            color: var(--ink) !important;
+        }
+
+        /* ===== Metrics ===== */
         div[data-testid="stMetric"] {
             background: var(--soft);
             border: 1px solid var(--border);
@@ -108,13 +222,102 @@ def apply_mobile_styles() -> None:
         div[data-testid="stMetric"] div {
             color: var(--ink) !important;
         }
+
+        /* ===== Captions ===== */
         div[data-testid="stCaption"],
         div[data-testid="stCaption"] p {
             color: var(--muted) !important;
         }
+
+        /* ===== Expanders ===== */
         div[data-testid="stExpander"] {
             border-color: var(--border) !important;
+            background: var(--surface);
         }
+        div[data-testid="stExpander"] details,
+        div[data-testid="stExpanderDetails"] {
+            background: var(--surface) !important;
+            border-color: var(--border) !important;
+        }
+        div[data-testid="stExpanderSummary"],
+        div[data-testid="stExpander"] summary {
+            color: var(--ink) !important;
+            background: var(--surface);
+        }
+        div[data-testid="stExpanderDetails"] p,
+        div[data-testid="stExpanderDetails"] span,
+        div[data-testid="stExpanderDetails"] label {
+            color: var(--ink) !important;
+        }
+
+        /* ===== Alert boxes (info, warning, error, success) ===== */
+        div[data-testid="stAlert"],
+        div[data-testid*="Alert"] {
+            background-color: var(--soft) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 8px;
+            color: var(--ink) !important;
+        }
+        div[data-testid="stAlert"] p,
+        div[data-testid="stAlert"] span,
+        div[data-testid*="Alert"] p,
+        div[data-testid*="Alert"] span,
+        div[data-testid*="Alert"] div {
+            color: var(--ink) !important;
+        }
+
+        /* ===== Popover ===== */
+        div[data-testid="stPopoverContent"] {
+            background-color: var(--surface) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 10px;
+        }
+        div[data-testid="stPopoverContent"] p,
+        div[data-testid="stPopoverContent"] span,
+        div[data-testid="stPopoverContent"] label {
+            color: var(--ink) !important;
+        }
+
+        /* ===== Tabs ===== */
+        div[data-testid="stTabs"] [role="tablist"] {
+            border-color: var(--border) !important;
+            gap: 0.25rem;
+        }
+        div[data-testid="stTabs"] button[role="tab"] {
+            color: var(--muted) !important;
+            border-radius: 8px 8px 0 0;
+        }
+        div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+            color: var(--accent) !important;
+        }
+        div[data-testid="stTabContent"] {
+            background-color: var(--surface);
+        }
+
+        /* ===== Divider ===== */
+        hr[data-testid="stDivider"],
+        div[data-testid="stDivider"] hr {
+            border-color: var(--border) !important;
+        }
+
+        /* ===== Dataframe ===== */
+        div[data-testid="stDataFrame"] {
+            background-color: var(--surface) !important;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        div[data-testid="stDataFrame"] [data-testid="data-grid"] {
+            background-color: var(--surface) !important;
+        }
+
+        /* ===== SVG icons (selectbox arrows, etc.) ===== */
+        .stSelectbox svg,
+        div[data-baseweb="select"] svg {
+            fill: var(--muted) !important;
+            color: var(--muted) !important;
+        }
+
+        /* ===== Mobile responsive ===== */
         @media (max-width: 640px) {
             .block-container {
                 padding-left: 0.75rem;
@@ -127,10 +330,62 @@ def apply_mobile_styles() -> None:
             div[data-testid="stDataFrame"] {
                 overflow-x: auto;
             }
+            .pano-title-main { font-size: 1.05rem; }
+            .pano-title-sub { font-size: 0.72rem; }
+        }
+
+        /* Hide JS-injection iframes */
+        iframe[height="0"] {
+            border: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden;
         }
         </style>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def inject_theme_script() -> None:
+    st.components.v1.html(
+        """
+        <script>
+        (function() {
+            try {
+                var doc = window.parent.document;
+                var root = doc.documentElement;
+                var KEY = 'pano-theme';
+                function getTheme() {
+                    var t = localStorage.getItem(KEY);
+                    if (!t) {
+                        t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                    }
+                    return t;
+                }
+                function applyTheme() {
+                    root.setAttribute('data-theme', getTheme());
+                }
+                applyTheme();
+                if (!window.parent.__panoThemeInit) {
+                    window.parent.__panoThemeInit = true;
+                    doc.addEventListener('click', function(e) {
+                        var btn = e.target.closest('#theme-toggle');
+                        if (!btn) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var cur = getTheme();
+                        var next = cur === 'dark' ? 'light' : 'dark';
+                        localStorage.setItem(KEY, next);
+                        root.setAttribute('data-theme', next);
+                    }, true);
+                }
+            } catch(err) {}
+        })();
+        </script>
+        """,
+        height=0,
     )
 
 
@@ -323,7 +578,7 @@ def render_form(
         with lon_col:
             longitude = st.text_input("Kinh độ (Longitude)", placeholder="VD: 108.0000")
 
-        submitted = st.form_submit_button("Lưu vào Google Sheet", width='stretch')
+        submitted = st.form_submit_button("Lưu vào Google Sheet", type="primary", width='stretch')
 
     if not submitted:
         return
@@ -375,7 +630,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation], p
     with title_col:
         st.subheader("Danh sách log")
     with refresh_col:
-        if st.button("Lam moi", use_container_width=True, key="refresh_btn"):
+        if st.button("🔄 Làm mới", use_container_width=True, key="refresh_btn"):
             st.cache_data.clear()
             st.rerun()
 
@@ -487,7 +742,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation], p
                 with lon_col:
                     edit_lon = st.text_input("Kinh độ (Longitude)", value=editing.longitude)
 
-                save_edit = st.form_submit_button("Lưu chỉnh sửa", width="stretch")
+                save_edit = st.form_submit_button("Lưu chỉnh sửa", type="primary", width="stretch")
 
             if save_edit:
                 if not edit_hotspot_value:
@@ -533,12 +788,20 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation], p
 def main() -> None:
     apply_mobile_styles()
     st.markdown(
-        '<p style="font-size:1.1rem;font-weight:700;margin:0 0 0.1rem 0;color:var(--ink)">'
-        'Panorama 360 Log</p>'
-        '<p style="font-size:0.78rem;margin:0 0 0.75rem 0;color:var(--muted)">'
-        'Quản lý hotspot địa điểm · Google Sheets</p>',
+        '<div class="pano-header">'
+        '<div>'
+        '<span class="pano-title-main">Panorama 360 Log</span>'
+        '<span class="pano-title-sub">Quản lý hotspot · Google Sheets</span>'
+        '</div>'
+        '<button id="theme-toggle" class="pano-theme-btn" '
+        'aria-label="Đổi giao diện sáng/tối" title="Sáng / Tối">'
+        '<span class="icon-moon">🌙</span>'
+        '<span class="icon-sun">☀️</span>'
+        '</button>'
+        '</div>',
         unsafe_allow_html=True,
     )
+    inject_theme_script()
 
     try:
         store, place_store, member_store = get_stores()
