@@ -1,6 +1,13 @@
-def main():
-    print("Run the app with: uv run streamlit run app.py")
+import subprocess
+import sys
+
+
+def main() -> None:
+    subprocess.run(
+        ["streamlit", "run", "app.py", "--server.headless", "true"],
+        check=True,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

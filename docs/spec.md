@@ -18,8 +18,8 @@ Build a mobile-friendly Streamlit app for managing 360 panorama location logs. U
 
 ## Project Structure
 - `app.py`: Streamlit entrypoint
-- `src/log_panorama/models.py`: record model and validation
-- `src/log_panorama/sheets.py`: Google Sheets gateway
+- `log_panorama/models.py`: record model and validation
+- `log_panorama/sheets.py`: Google Sheets gateway
 - `tests/`: unit tests
 - `.streamlit/secrets.example.toml`: example Streamlit secrets
 
@@ -48,4 +48,3 @@ Unit-test pure validation and Google Sheet row mapping with fake worksheets. Do 
 - Data persists to the configured Google Sheet worksheet.
 - Project dependencies are managed by `uv`.
 - `uv run pytest` passes.
-

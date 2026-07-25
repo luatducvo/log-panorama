@@ -24,7 +24,7 @@ htmlcov/
 venv/
 env/
 ENV/
-.streamlit/
+.streamlit/secrets.toml
 
 # Environment files
 .env

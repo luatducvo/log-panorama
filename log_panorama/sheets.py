@@ -82,7 +82,11 @@ def build_store_from_secrets(secrets: Mapping[str, Any]) -> PanoramaSheetStore:
     try:
         worksheet = spreadsheet.worksheet(worksheet_name)
     except gspread.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=1000, cols=len(SHEET_HEADERS))
+        worksheet = spreadsheet.add_worksheet(
+            title=worksheet_name,
+            rows=1000,
+            cols=len(SHEET_HEADERS),
+        )
 
     return PanoramaSheetStore(worksheet)
 
