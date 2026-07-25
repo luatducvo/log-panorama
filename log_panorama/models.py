@@ -5,11 +5,13 @@ from datetime import UTC, datetime
 
 
 SHEET_HEADERS = [
-    "place_code",
-    "place_name",
-    "hotspot",
-    "connects_to",
-    "updated_at",
+    "Mã địa điểm",
+    "Tên địa điểm",
+    "Hotspot",
+    "Hotspot nối tới",
+    "Vĩ độ",
+    "Kinh độ",
+    "Cập nhật",
 ]
 
 
@@ -23,6 +25,8 @@ class PanoramaLocation:
     place_name: str
     hotspot: str
     connects_to: str = ""
+    latitude: str = ""
+    longitude: str = ""
     updated_at: str = ""
 
     @classmethod
@@ -32,12 +36,16 @@ class PanoramaLocation:
         place_name: str,
         hotspot: str,
         connects_to: str = "",
+        latitude: str = "",
+        longitude: str = "",
     ) -> "PanoramaLocation":
         record = cls(
             place_code=place_code.strip(),
             place_name=place_name.strip(),
             hotspot=hotspot.strip(),
             connects_to=connects_to.strip(),
+            latitude=latitude.strip(),
+            longitude=longitude.strip(),
             updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
         )
         record.validate()
@@ -46,11 +54,13 @@ class PanoramaLocation:
     @classmethod
     def from_sheet_row(cls, row: dict[str, object]) -> "PanoramaLocation":
         return cls(
-            place_code=str(row.get("place_code", "")).strip(),
-            place_name=str(row.get("place_name", "")).strip(),
-            hotspot=str(row.get("hotspot", "")).strip(),
-            connects_to=str(row.get("connects_to", "")).strip(),
-            updated_at=str(row.get("updated_at", "")).strip(),
+            place_code=str(row.get("Mã địa điểm", "")).strip(),
+            place_name=str(row.get("Tên địa điểm", "")).strip(),
+            hotspot=str(row.get("Hotspot", "")).strip(),
+            connects_to=str(row.get("Hotspot nối tới", "")).strip(),
+            latitude=str(row.get("Vĩ độ", "")).strip(),
+            longitude=str(row.get("Kinh độ", "")).strip(),
+            updated_at=str(row.get("Cập nhật", "")).strip(),
         )
 
     @property
@@ -60,14 +70,21 @@ class PanoramaLocation:
     def validate(self) -> None:
         missing = []
         if not self.place_code:
-            missing.append("ma dia diem")
+            missing.append("mã địa điểm")
         if not self.place_name:
-            missing.append("ten dia diem")
+            missing.append("tên địa điểm")
         if not self.hotspot:
-            missing.append("hotspot cua dia diem")
+            missing.append("hotspot của địa điểm")
+
+        for label, val in [("vĩ độ (latitude)", self.latitude), ("kinh độ (longitude)", self.longitude)]:
+            if val:
+                try:
+                    float(val)
+                except ValueError:
+                    missing.append(f"{label} phải là số thực")
 
         if missing:
-            raise ValidationError("Vui long nhap: " + ", ".join(missing))
+            raise ValidationError("Vui lòng nhập đúng: " + ", ".join(missing))
 
     def to_sheet_row(self) -> list[str]:
         return [
@@ -75,6 +92,8 @@ class PanoramaLocation:
             self.place_name,
             self.hotspot,
             self.connects_to,
+            self.latitude,
+            self.longitude,
             self.updated_at,
         ]
 

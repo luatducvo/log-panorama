@@ -3,10 +3,13 @@ import sys
 
 
 def main() -> None:
-    subprocess.run(
-        ["streamlit", "run", "app.py", "--server.headless", "true"],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            ["streamlit", "run", "app.py", "--server.headless", "true"],
+            check=True,
+        )
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

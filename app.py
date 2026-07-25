@@ -90,11 +90,13 @@ def records_to_dataframe(records: list[PanoramaLocation]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
-                "Ma dia diem": record.place_code,
-                "Ten dia diem": record.place_name,
+                "Mã địa điểm": record.place_code,
+                "Tên địa điểm": record.place_name,
                 "Hotspot": record.hotspot,
-                "Hotspot noi toi": record.connects_to,
-                "Cap nhat": record.updated_at,
+                "Hotspot nối tới": record.connects_to,
+                "Vĩ độ": record.latitude,
+                "Kinh độ": record.longitude,
+                "Cập nhật": record.updated_at,
             }
             for record in records
         ]
@@ -104,60 +106,82 @@ def records_to_dataframe(records: list[PanoramaLocation]) -> pd.DataFrame:
 def render_config_error(error: Exception) -> None:
     st.error(str(error))
     st.info(
-        "Tao file `.streamlit/secrets.toml` tu `.streamlit/secrets.example.toml`, "
-        "dien service account, spreadsheet_id, roi share Google Sheet cho client_email."
+        "Tạo file `.streamlit/secrets.toml` từ `.streamlit/secrets.example.toml`, "
+        "điền service account, spreadsheet_id, rồi share Google Sheet cho client_email."
     )
+
+
+KNOWN_PLACES: dict[str, str] = {
+    "P360-GL-001": "Quảng trường Đại Đoàn Kết",
+    "P360-GL-002": "Bảo tàng Gia Lai",
+    "P360-GL-003": "Biển Hồ Pleiku",
+    "P360-GL-004": "Chùa Minh Thành",
+    "P360-GL-005": "Chùa Bửu Minh",
+    "P360-GL-006": "Công viên Diên Hồng",
+}
 
 
 def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
     with st.form("location_form", clear_on_submit=False):
-        st.subheader("Them hoac cap nhat log")
+        st.subheader("Thêm hoặc cập nhật log")
 
-        recent_codes = sorted({record.place_code for record in records})
-        selected_code = st.selectbox(
-            "Chon nhanh ma dia diem da co",
-            [""] + recent_codes,
+        # Merge known places with any extra codes already in the sheet
+        sheet_map = {record.place_code: record.place_name for record in records}
+        combined: dict[str, str] = {**KNOWN_PLACES, **sheet_map}
+        quick_options = [""] + [
+            f"{code} – {name}" for code, name in sorted(combined.items())
+        ]
+        selected_quick = st.selectbox(
+            "Chọn nhanh địa điểm",
+            quick_options,
             index=0,
         )
+        selected_code = selected_quick.split(" – ")[0] if selected_quick else ""
 
-        code_col, name_col = st.columns(2)
-        with code_col:
-            place_code = st.text_input("Ma dia diem", value=selected_code, placeholder="VD: PANO-001")
-        with name_col:
-            known_name = next(
-                (record.place_name for record in records if record.place_code == selected_code),
-                "",
-            )
-            place_name = st.text_input("Ten dia diem", value=known_name, placeholder="VD: Sanh chinh")
+        place_code = selected_code
+        known_name = combined.get(selected_code, "")
+        place_name = st.text_input("Tên địa điểm", value=known_name, placeholder="VD: Sảnh chính")
 
-        hotspot = st.text_input("Hotspot cua dia diem", placeholder="VD: cua-ra-vao")
-        connects_to = st.text_input("Hotspot noi toi", placeholder="VD: hanh-lang-01")
+        hotspot = st.text_input("Hotspot của địa điểm", placeholder="VD: CMT-EXT-001")
+        st.caption(
+            "**Quy tắc đặt tên hotspot:** `[Mã địa điểm]-[Khu vực]-[Số thứ tự]`  \n"
+            "• **Mã địa điểm** — viết tắt tên địa điểm, VD: `CMT` = Chùa Minh Thành  \n"
+            "• **Khu vực** — `EXT` ngoài trời · `INT` bên trong  \n"
+            "• **Số thứ tự** — 3 chữ số, VD: `001`, `002`"
+        )
+        connects_to = st.text_input("Hotspot nối tới", placeholder="VD: CMT-EXT-001")
 
-        submitted = st.form_submit_button("Luu vao Google Sheet", use_container_width=True)
+        lat_col, lon_col = st.columns(2)
+        with lat_col:
+            latitude = st.text_input("Vĩ độ (Latitude)", placeholder="VD: 13.9833")
+        with lon_col:
+            longitude = st.text_input("Kinh độ (Longitude)", placeholder="VD: 108.0000")
+
+        submitted = st.form_submit_button("Lưu vào Google Sheet", width='stretch')
 
     if not submitted:
         return
 
     try:
-        record = PanoramaLocation.from_form(place_code, place_name, hotspot, connects_to)
+        record = PanoramaLocation.from_form(place_code, place_name, hotspot, connects_to, latitude, longitude)
         result = store.upsert(record)
     except ValidationError as exc:
         st.warning(str(exc))
         return
     except Exception as exc:
-        st.error(f"Khong luu duoc vao Google Sheet: {exc}")
+        st.error(f"Không lưu được vào Google Sheet: {exc}")
         return
 
     st.cache_resource.clear()
-    message = "Da tao log moi." if result == "created" else "Da cap nhat log hien co."
+    message = "Đã tạo log mới." if result == "created" else "Đã cập nhật log hiện có."
     st.success(message)
     st.rerun()
 
 
 def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
-    st.subheader("Danh sach log")
+    st.subheader("Danh sách log")
 
-    search = st.text_input("Tim kiem", placeholder="Nhap ma, ten dia diem, hotspot...")
+    search = st.text_input("Tìm kiếm", placeholder="Nhập mã, tên địa điểm, hotspot...")
     filtered = records
     if search.strip():
         needle = search.strip().casefold()
@@ -171,41 +195,87 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
         ]
 
     metric_cols = st.columns(3)
-    metric_cols[0].metric("Tong log", len(records))
-    metric_cols[1].metric("Dia diem", len({record.place_code for record in records}))
-    metric_cols[2].metric("Dang hien thi", len(filtered))
+    metric_cols[0].metric("Tổng log", len(records))
+    metric_cols[1].metric("Địa điểm", len({record.place_code for record in records}))
+    metric_cols[2].metric("Đang hiển thị", len(filtered))
 
     dataframe = records_to_dataframe(filtered)
     if dataframe.empty:
-        st.info("Chua co log nao phu hop.")
+        st.info("Chưa có log nào phù hợp.")
     else:
-        st.dataframe(dataframe, hide_index=True, use_container_width=True)
+        st.dataframe(dataframe, hide_index=True, width='stretch')
 
-    with st.expander("Xoa log"):
+    with st.expander("✏️ Chỉnh sửa log"):
         if not records:
-            st.caption("Chua co du lieu de xoa.")
+            st.caption("Chưa có dữ liệu để chỉnh sửa.")
+        else:
+            edit_options = {
+                f"{r.place_code} | {r.hotspot}": r for r in records
+            }
+            edit_selected = st.selectbox(
+                "Chọn log cần chỉnh sửa",
+                list(edit_options.keys()),
+                key="edit_select",
+            )
+            editing: PanoramaLocation = edit_options[edit_selected]
+
+            with st.form("edit_form", clear_on_submit=False):
+                st.caption(f"Đang chỉnh sửa: **{editing.place_code} | {editing.hotspot}**")
+
+                edit_name = st.text_input("Tên địa điểm", value=editing.place_name)
+                edit_hotspot = st.text_input("Hotspot của địa điểm", value=editing.hotspot)
+                edit_connects_to = st.text_input("Hotspot nối tới", value=editing.connects_to)
+
+                lat_col, lon_col = st.columns(2)
+                with lat_col:
+                    edit_lat = st.text_input("Vĩ độ (Latitude)", value=editing.latitude)
+                with lon_col:
+                    edit_lon = st.text_input("Kinh độ (Longitude)", value=editing.longitude)
+
+                save_edit = st.form_submit_button("Lưu chỉnh sửa", width="stretch")
+
+            if save_edit:
+                try:
+                    updated = PanoramaLocation.from_form(
+                        editing.place_code, edit_name, edit_hotspot,
+                        edit_connects_to, edit_lat, edit_lon,
+                    )
+                    # Nếu hotspot đổi tên → xóa record cũ trước
+                    if updated.hotspot.casefold() != editing.hotspot.casefold():
+                        store.delete(editing.place_code, editing.hotspot)
+                    store.upsert(updated)
+                except ValidationError as exc:
+                    st.warning(str(exc))
+                else:
+                    st.cache_resource.clear()
+                    st.success("Đã lưu chỉnh sửa.")
+                    st.rerun()
+
+    with st.expander("🗑️ Xóa log"):
+        if not records:
+            st.caption("Chưa có dữ liệu để xóa.")
             return
 
         options = {
             f"{record.place_code} | {record.hotspot} -> {record.connects_to or '-'}": record
             for record in records
         }
-        selected = st.selectbox("Chon log can xoa", list(options.keys()))
-        confirm = st.checkbox("Toi muon xoa log nay")
-        if st.button("Xoa log", type="secondary", use_container_width=True, disabled=not confirm):
+        selected = st.selectbox("Chọn log cần xóa", list(options.keys()))
+        confirm = st.checkbox("Tôi muốn xóa log này")
+        if st.button("Xóa log", type="secondary", width='stretch', disabled=not confirm):
             record = options[selected]
             if store.delete(record.place_code, record.hotspot):
                 st.cache_resource.clear()
-                st.success("Da xoa log.")
+                st.success("Đã xóa log.")
                 st.rerun()
             else:
-                st.warning("Khong tim thay log de xoa.")
+                st.warning("Không tìm thấy log để xóa.")
 
 
 def main() -> None:
     apply_mobile_styles()
     st.title("Panorama 360 Log")
-    st.caption("Quan ly ma dia diem, hotspot hien tai va hotspot noi toi tren Google Sheets.")
+    st.caption("Quản lý mã địa điểm, hotspot hiện tại và hotspot nối tới trên Google Sheets.")
 
     try:
         store = get_store()
@@ -214,7 +284,7 @@ def main() -> None:
         render_config_error(exc)
         return
     except Exception as exc:
-        st.error(f"Khong ket noi duoc Google Sheets: {exc}")
+        st.error(f"Không kết nối được Google Sheets: {exc}")
         return
 
     render_form(store, records)

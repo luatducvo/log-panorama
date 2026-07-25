@@ -27,7 +27,8 @@ class PanoramaSheetStore:
     def ensure_headers(self) -> None:
         first_row = self.worksheet.row_values(1)
         if first_row != SHEET_HEADERS:
-            self.worksheet.update("A1:E1", [SHEET_HEADERS])
+            end_col = chr(ord("A") + len(SHEET_HEADERS) - 1)
+            self.worksheet.update(range_name=f"A1:{end_col}1", values=[SHEET_HEADERS])
 
     def list_records(self) -> list[PanoramaLocation]:
         rows = self.worksheet.get_all_records()
@@ -39,7 +40,10 @@ class PanoramaSheetStore:
             self.worksheet.append_row(record.to_sheet_row(), value_input_option="USER_ENTERED")
             return "created"
 
-        self.worksheet.update(f"A{row_index}:E{row_index}", [record.to_sheet_row()])
+        self.worksheet.update(
+            range_name=f"A{row_index}:G{row_index}",
+            values=[record.to_sheet_row()],
+        )
         return "updated"
 
     def delete(self, place_code: str, hotspot: str) -> bool:
