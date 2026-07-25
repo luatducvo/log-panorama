@@ -27,13 +27,42 @@ def apply_mobile_styles() -> None:
             --muted: #5b6675;
             --accent: #0f766e;
         }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --surface: #1e2530;
+                --soft: #262f3d;
+                --border: #3a4556;
+                --ink: #e8edf4;
+                --muted: #9aa5b4;
+                --accent: #2dd4bf;
+            }
+        }
+        /* Streamlit dark theme override */
+        [data-theme="dark"] {
+            --surface: #1e2530;
+            --soft: #262f3d;
+            --border: #3a4556;
+            --ink: #e8edf4;
+            --muted: #9aa5b4;
+            --accent: #2dd4bf;
+        }
         .block-container {
-            padding-top: 1rem;
+            padding-top: 0.5rem;
             padding-bottom: 5rem;
             max-width: 980px;
         }
+        /* Ẩn header toolbar mặc định của Streamlit */
+        header[data-testid="stHeader"] {
+            height: 0;
+            min-height: 0;
+            visibility: hidden;
+        }
+        div[data-testid="stDecoration"] {
+            display: none;
+        }
         h1, h2, h3, p, label, span {
             letter-spacing: 0;
+            color: var(--ink) !important;
         }
         div[data-testid="stForm"] {
             border: 1px solid var(--border);
@@ -48,15 +77,30 @@ def apply_mobile_styles() -> None:
             border-radius: 8px;
             font-weight: 650;
         }
-        .stTextInput input {
+        .stTextInput input,
+        .stSelectbox div[data-baseweb="select"] {
             min-height: 44px;
             border-radius: 8px;
+            background: var(--surface) !important;
+            color: var(--ink) !important;
+            border-color: var(--border) !important;
         }
         div[data-testid="stMetric"] {
             background: var(--soft);
             border: 1px solid var(--border);
             border-radius: 8px;
             padding: 0.75rem;
+        }
+        div[data-testid="stMetric"] label,
+        div[data-testid="stMetric"] div {
+            color: var(--ink) !important;
+        }
+        div[data-testid="stCaption"],
+        div[data-testid="stCaption"] p {
+            color: var(--muted) !important;
+        }
+        div[data-testid="stExpander"] {
+            border-color: var(--border) !important;
         }
         @media (max-width: 640px) {
             .block-container {
@@ -82,8 +126,10 @@ def get_store() -> PanoramaSheetStore:
     return build_store_from_secrets(st.secrets)
 
 
-def load_records(store: PanoramaSheetStore) -> list[PanoramaLocation]:
-    return store.list_records()
+@st.cache_data(ttl=60, show_spinner=False)
+def load_records(_store: PanoramaSheetStore) -> list[PanoramaLocation]:
+    """Tải dữ liệu từ Google Sheets, cache tối đa 60 giây."""
+    return _store.list_records()
 
 
 def records_to_dataframe(records: list[PanoramaLocation]) -> pd.DataFrame:
@@ -123,7 +169,7 @@ KNOWN_PLACES: dict[str, str] = {
 
 def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
     with st.form("location_form", clear_on_submit=False):
-        st.subheader("Thêm hoặc cập nhật log")
+        # st.subheader("Quản lý log")
 
         # Merge known places with any extra codes already in the sheet
         sheet_map = {record.place_code: record.place_name for record in records}
@@ -172,14 +218,20 @@ def render_form(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> N
         st.error(f"Không lưu được vào Google Sheet: {exc}")
         return
 
-    st.cache_resource.clear()
+    load_records.clear()
     message = "Đã tạo log mới." if result == "created" else "Đã cập nhật log hiện có."
     st.success(message)
     st.rerun()
 
 
 def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -> None:
-    st.subheader("Danh sách log")
+    title_col, refresh_col = st.columns([4, 1])
+    with title_col:
+        st.subheader("Danh sách log")
+    with refresh_col:
+        if st.button("🔄 Làm mới", use_container_width=True, help="Tải lại dữ liệu mới nhất từ Google Sheets"):
+            load_records.clear()
+            st.rerun()
 
     search = st.text_input("Tìm kiếm", placeholder="Nhập mã, tên địa điểm, hotspot...")
     filtered = records
@@ -247,7 +299,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
                 except ValidationError as exc:
                     st.warning(str(exc))
                 else:
-                    st.cache_resource.clear()
+                    load_records.clear()
                     st.success("Đã lưu chỉnh sửa.")
                     st.rerun()
 
@@ -265,7 +317,7 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
         if st.button("Xóa log", type="secondary", width='stretch', disabled=not confirm):
             record = options[selected]
             if store.delete(record.place_code, record.hotspot):
-                st.cache_resource.clear()
+                load_records.clear()
                 st.success("Đã xóa log.")
                 st.rerun()
             else:
@@ -274,8 +326,13 @@ def render_records(store: PanoramaSheetStore, records: list[PanoramaLocation]) -
 
 def main() -> None:
     apply_mobile_styles()
-    st.title("Panorama 360 Log")
-    st.caption("Quản lý mã địa điểm, hotspot hiện tại và hotspot nối tới trên Google Sheets.")
+    st.markdown(
+        '<p style="font-size:1.1rem;font-weight:700;margin:0 0 0.1rem 0;color:var(--ink)">'
+        'Panorama 360 Log</p>'
+        '<p style="font-size:0.78rem;margin:0 0 0.75rem 0;color:var(--muted)">'
+        'Quản lý hotspot địa điểm · Google Sheets</p>',
+        unsafe_allow_html=True,
+    )
 
     try:
         store = get_store()
